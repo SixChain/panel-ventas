@@ -1,6 +1,6 @@
+import os
 import pandas as pd
 import plotly.graph_objects as go
-import requests
 import streamlit as st
 
 # ---------------------------------------------------------------
@@ -8,9 +8,7 @@ import streamlit as st
 # ---------------------------------------------------------------
 st.set_page_config(page_title="Panel Comercial", layout="wide")
 
-URL_DATOS = "https://raw.githubusercontent.com/SixChain/panel-ventas/main/data/ventas.csv"
-# Para saber cuándo Power Automate actualizó el archivo por última vez
-URL_ULTIMO_CAMBIO = "https://api.github.com/repos/SixChain/panel-ventas/commits?path=data/ventas.csv&per_page=1"
+RUTA_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "ventas.csv")
 
 MESES = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO",
          "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
@@ -40,28 +38,29 @@ st.markdown(
 
 
 # ---------------------------------------------------------------
-# 2. CARGA DE DATOS (se lee directo de GitHub)
+# 2. CARGA DE DATOS
 # ---------------------------------------------------------------
-@st.cache_data(ttl=600)
-def cargar_datos():
-    df = pd.read_csv(URL_DATOS)
+@st.cache_data
+def cargar_datos(ruta: str, file_mtime: float):
+    # Streamlit usa `file_mtime` como llave del caché.
+    # Cuando el archivo cambia en el repo, `file_mtime` cambia y se recarga al instante.
+    df = pd.read_csv(ruta)
     df["mes_num"] = df["mes"].map({m: i + 1 for i, m in enumerate(MESES)})
     df["nombre_vendedor"] = df["nombre_vendedor"].str.strip().str.title()
     return df
 
 
-@st.cache_data(ttl=600)
-def fecha_ultima_actualizacion():
-    """Pregunta a GitHub la fecha del último commit de ventas.csv (el que hace Power Automate)."""
-    try:
-        r = requests.get(URL_ULTIMO_CAMBIO, timeout=5)
-        fecha = pd.to_datetime(r.json()[0]["commit"]["committer"]["date"])
-        return fecha.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M %p")
-    except Exception:
-        return "no disponible"
+def fecha_ultima_actualizacion(file_mtime: float):
+    """Convierte el timestamp de modificación del archivo a hora de Colombia."""
+    fecha = pd.to_datetime(file_mtime, unit="s", utc=True)
+    return fecha.tz_convert("America/Bogota").strftime("%d/%m/%Y %I:%M %p")
 
 
-df_completo = cargar_datos()
+# Obtenemos el timestamp exacto de modificación del archivo en disco
+mtime_actual = os.path.getmtime(RUTA_CSV)
+
+# Cargamos los datos
+df_completo = cargar_datos(RUTA_CSV, mtime_actual)
 
 
 # ---------------------------------------------------------------
@@ -195,7 +194,7 @@ def tarjeta_kpi(titulo, valor, cambio, referencia):
 # ---------------------------------------------------------------
 st.markdown(f"<h1 style='margin-bottom:0'>Panel Comercial · <span style='color:{DORADO}'>Consorcio Líder</span></h1>", unsafe_allow_html=True)
 st.caption(f"Período analizado: {periodo} {anio_actual}, comparado con el mismo período de {anio_anterior}"
-           f"  ·  Última actualización de los datos: {fecha_ultima_actualizacion()}")
+           f"  ·  Última actualización de los datos: {fecha_ultima_actualizacion(mtime_actual)}")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
